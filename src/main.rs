@@ -1,8 +1,35 @@
-fn main() {
-    println!("Hello, world!");
+use eframe::egui;
+use std::time::{Duration, Instant};
+
+fn main() -> eframe::Result {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([360.0, 240.0]),
+        ..Default::default()
+    };
+
+    // 交给 eframe 运行 pomodoro， pomodoro 通过 impl eframe::App for PomodoroApp 实现了 eframe::App
+    // 因此 eframe 可以通过 eframe::App 这个接口运行 ui
+    eframe::run_native(
+        "Pomodoro",
+        options,
+        Box::new(|_cc| Ok(Box::new(PomodoroApp))),
+    )
 }
 
-use std::time::{Duration, Instant};
+struct PomodoroApp;
+
+impl eframe::App for PomodoroApp {
+    // 为 pomodoroApp 实现 frame::App trait
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Central Panel 为主内容区提供默认背景与边距。closure 参数里的 ui 是这个内容区的布局环境，遮蔽了外层同名变量。
+        egui::CentralPanel::default().show(ui, |ui| {
+            // 这个 closure 在本次 UI 构建中同步执行，每次需要绘制时，下面的描述会再次执行
+            ui.heading("Pomodoro");
+            ui.label("Focus");
+            ui.label(egui::RichText::new("25:00").size(48.0));
+        });
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Phase {
