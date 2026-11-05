@@ -3,7 +3,9 @@ use std::time::{Duration, Instant};
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([360.0, 240.0]),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([360.0, 280.0])
+            .with_transparent(true),
         ..Default::default()
     };
 
@@ -16,6 +18,8 @@ fn main() -> eframe::Result {
             Ok(Box::new(PomodoroApp {
                 timer: Timer::new(),
                 background: egui::Color32::from_rgb(28, 32, 40),
+                background_opacity: 255,
+                minimal_mode: false,
             }))
         }),
     )
@@ -24,24 +28,84 @@ fn main() -> eframe::Result {
 struct PomodoroApp {
     timer: Timer,
     background: egui::Color32,
+    background_opacity: u8,
+    minimal_mode: bool,
 }
 
 impl eframe::App for PomodoroApp {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0, 0.0, 0.0, 0.0]
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let now = Instant::now();
         self.timer.update(now);
 
-        let background_frame = egui::Frame::central_panel(ui.style()).fill(self.background);
+        // Keep the opaque source color separate so zero opacity does not lose its RGB.
+        let background = egui::Color32::from_rgba_unmultiplied(
+            self.background.r(),
+            self.background.g(),
+            self.background.b(),
+            self.background_opacity,
+        );
+        let background_frame = egui::Frame::central_panel(ui.style()).fill(background);
 
         egui::CentralPanel::default()
             .frame(background_frame)
             .show(ui, |ui| {
+                if self.minimal_mode {
+                    let remaining = self.timer.remaining(now);
+                    let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0);
+                    let response = ui.centered_and_justified(|ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{:02}:{:02}",
+                                    seconds / 60,
+                                    seconds % 60,
+                                ))
+                                .size(48.0),
+                            )
+                            .sense(egui::Sense::click()),
+                        )
+                    });
+                    if response.inner.clicked() {
+                        self.minimal_mode = false;
+                        ui.ctx().request_repaint();
+                    }
+                    return;
+                }
+
                 ui.heading("Pomodoro");
+
+                if ui.button("Minimal mode").clicked() {
+                    self.minimal_mode = true;
+                    ui.ctx().request_repaint();
+                    return;
+                }
 
                 ui.horizontal(|ui| {
                     ui.label("Background");
-                    ui.color_edit_button_srgba(&mut self.background);
+                    let mut rgb = [
+                        self.background.r(),
+                        self.background.g(),
+                        self.background.b(),
+                    ];
+                    if ui.color_edit_button_srgb(&mut rgb).changed() {
+                        self.background = egui::Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
+                        ui.ctx().request_repaint();
+                    }
                 });
+
+                if ui
+                    .add(
+                        egui::Slider::new(&mut self.background_opacity, 0..=255)
+                            .text("Background opacity"),
+                    )
+                    .changed()
+                {
+                    ui.ctx().request_repaint();
+                }
 
                 match self.timer.status() {
                     Status::Idle => {
