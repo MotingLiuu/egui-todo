@@ -12,22 +12,80 @@ fn main() -> eframe::Result {
     eframe::run_native(
         "Pomodoro",
         options,
-        Box::new(|_cc| Ok(Box::new(PomodoroApp))),
+        Box::new(|_cc| {
+            Ok(Box::new(PomodoroApp {
+                timer: Timer::new(),
+            }))
+        }),
     )
 }
 
-struct PomodoroApp;
+struct PomodoroApp {
+    timer: Timer,
+}
 
 impl eframe::App for PomodoroApp {
-    // 为 pomodoroApp 实现 frame::App trait
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        // Central Panel 为主内容区提供默认背景与边距。closure 参数里的 ui 是这个内容区的布局环境，遮蔽了外层同名变量。
+        let now = Instant::now();
+        self.timer.update(now);
+
         egui::CentralPanel::default().show(ui, |ui| {
-            // 这个 closure 在本次 UI 构建中同步执行，每次需要绘制时，下面的描述会再次执行
             ui.heading("Pomodoro");
-            ui.label("Focus");
-            ui.label(egui::RichText::new("25:00").size(48.0));
+
+            match self.timer.status() {
+                Status::Idle => {
+                    if ui.button("Start").clicked() {
+                        self.timer.start(now);
+                    }
+                }
+                Status::Running => {
+                    if ui.button("Pause").clicked() {
+                        self.timer.pause(now);
+                    }
+                }
+                Status::Paused => {
+                    if ui.button("Resume").clicked() {
+                        self.timer.resume(now);
+                    }
+                }
+            }
+
+            if ui.button("Skip").clicked() {
+                self.timer.skip();
+            }
+
+            let phase = match self.timer.phase() {
+                Phase::Focus => "Focus",
+                Phase::ShortBreak => "Short break",
+                Phase::LongBreak => "Long break",
+            };
+            ui.label(phase);
+
+            let remaining = self.timer.remaining(now);
+            let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0);
+
+            ui.label(
+                egui::RichText::new(format!("{:02}:{:02}", seconds / 60, seconds % 60,)).size(48.0),
+            );
+
+            ui.label(format!(
+                "Completed focus sessions: {}",
+                self.timer.completed_focus_sessions(),
+            ));
         });
+
+        if self.timer.status() == Status::Running {
+            let remaining = self.timer.remaining(Instant::now());
+            let fractional_nanos = remaining.subsec_nanos();
+
+            let delay = if fractional_nanos == 0 {
+                remaining.min(Duration::from_secs(1))
+            } else {
+                Duration::from_nanos(u64::from(fractional_nanos))
+            };
+
+            ui.ctx().request_repaint_after(delay);
+        }
     }
 }
 
