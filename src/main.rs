@@ -2,10 +2,16 @@ use eframe::egui;
 use std::time::{Duration, Instant};
 
 fn main() -> eframe::Result {
+    let viewport = egui::ViewportBuilder::default()
+        .with_inner_size([360.0, 280.0])
+        .with_transparent(true);
+    #[cfg(target_os = "macos")]
+    let viewport = viewport
+        .with_fullsize_content_view(true)
+        .with_titlebar_shown(false);
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([360.0, 280.0])
-            .with_transparent(true),
+        viewport,
         ..Default::default()
     };
 
@@ -20,6 +26,7 @@ fn main() -> eframe::Result {
                 background: egui::Color32::from_rgb(28, 32, 40),
                 background_opacity: 255,
                 minimal_mode: false,
+                always_on_top: false,
             }))
         }),
     )
@@ -30,6 +37,7 @@ struct PomodoroApp {
     background: egui::Color32,
     background_opacity: u8,
     minimal_mode: bool,
+    always_on_top: bool,
 }
 
 impl eframe::App for PomodoroApp {
@@ -48,7 +56,22 @@ impl eframe::App for PomodoroApp {
             self.background.b(),
             self.background_opacity,
         );
-        let background_frame = egui::Frame::central_panel(ui.style()).fill(background);
+        // Paint once across the full content view, including the macOS title bar.
+        // A second translucent fill would make overlapping areas more opaque.
+        ui.painter().rect_filled(ui.max_rect(), 0.0, background);
+
+        #[cfg(target_os = "macos")]
+        {
+            // Leave room for the native traffic-light buttons and window title.
+            let titlebar =
+                ui.allocate_response(egui::vec2(ui.available_width(), 28.0), egui::Sense::drag());
+            if titlebar.drag_started() {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+            }
+        }
+
+        let background_frame =
+            egui::Frame::central_panel(ui.style()).fill(egui::Color32::TRANSPARENT);
 
         egui::CentralPanel::default()
             .frame(background_frame)
@@ -78,7 +101,28 @@ impl eframe::App for PomodoroApp {
 
                 ui.heading("Pomodoro");
 
-                if ui.button("Minimal mode").clicked() {
+                let enter_minimal_mode = ui
+                    .horizontal(|ui| {
+                        let label = if self.always_on_top {
+                            "Unpin window"
+                        } else {
+                            "Pin window"
+                        };
+                        if ui.button(label).clicked() {
+                            self.always_on_top = !self.always_on_top;
+                            let level = if self.always_on_top {
+                                egui::WindowLevel::AlwaysOnTop
+                            } else {
+                                egui::WindowLevel::Normal
+                            };
+                            ui.ctx()
+                                .send_viewport_cmd(egui::ViewportCommand::WindowLevel(level));
+                        }
+                        ui.button("Minimal mode").clicked()
+                    })
+                    .inner;
+
+                if enter_minimal_mode {
                     self.minimal_mode = true;
                     ui.ctx().request_repaint();
                     return;
