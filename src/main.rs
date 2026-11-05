@@ -1,3 +1,6 @@
+#[cfg(target_os = "macos")]
+mod macos;
+
 use eframe::egui;
 use std::time::{Duration, Instant};
 
@@ -26,6 +29,7 @@ fn main() -> eframe::Result {
                 background: egui::Color32::from_rgb(28, 32, 40),
                 background_opacity: 255,
                 minimal_mode: false,
+                normal_window_size: None,
                 always_on_top: false,
             }))
         }),
@@ -37,6 +41,7 @@ struct PomodoroApp {
     background: egui::Color32,
     background_opacity: u8,
     minimal_mode: bool,
+    normal_window_size: Option<egui::Vec2>,
     always_on_top: bool,
 }
 
@@ -61,7 +66,7 @@ impl eframe::App for PomodoroApp {
         ui.painter().rect_filled(ui.max_rect(), 0.0, background);
 
         #[cfg(target_os = "macos")]
-        {
+        if !self.minimal_mode {
             // Leave room for the native traffic-light buttons and window title.
             let titlebar =
                 ui.allocate_response(egui::vec2(ui.available_width(), 28.0), egui::Sense::drag());
@@ -87,13 +92,23 @@ impl eframe::App for PomodoroApp {
                                     seconds / 60,
                                     seconds % 60,
                                 ))
-                                .size(48.0),
+                                .size(48.0)
+                                .monospace(),
                             )
-                            .sense(egui::Sense::click()),
+                            .sense(egui::Sense::click_and_drag()),
                         )
                     });
+                    if response.inner.drag_started() {
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
                     if response.inner.clicked() {
                         self.minimal_mode = false;
+                        #[cfg(target_os = "macos")]
+                        macos::set_minimal_mode(_frame, false);
+                        if let Some(size) = self.normal_window_size.take() {
+                            ui.ctx()
+                                .send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
+                        }
                         ui.ctx().request_repaint();
                     }
                     return;
@@ -123,9 +138,24 @@ impl eframe::App for PomodoroApp {
                     .inner;
 
                 if enter_minimal_mode {
+                    self.normal_window_size = Some(
+                        ui.ctx()
+                            .input(|input| input.viewport().inner_rect.map(|rect| rect.size()))
+                            .unwrap_or(egui::vec2(360.0, 280.0)),
+                    );
+                    // Monospace digits keep the compact window size stable as time changes.
+                    let text = ui.painter().layout_no_wrap(
+                        "00:00".to_owned(),
+                        egui::FontId::monospace(48.0),
+                        ui.visuals().text_color(),
+                    );
+                    let size = (text.size() + egui::vec2(24.0, 16.0)).ceil();
                     self.minimal_mode = true;
+                    #[cfg(target_os = "macos")]
+                    macos::set_minimal_mode(_frame, true);
+                    ui.ctx()
+                        .send_viewport_cmd(egui::ViewportCommand::InnerSize(size));
                     ui.ctx().request_repaint();
-                    return;
                 }
 
                 ui.horizontal(|ui| {
