@@ -15,6 +15,7 @@ fn main() -> eframe::Result {
         Box::new(|_cc| {
             Ok(Box::new(PomodoroApp {
                 timer: Timer::new(),
+                background: egui::Color32::from_rgb(28, 32, 40),
             }))
         }),
     )
@@ -22,6 +23,7 @@ fn main() -> eframe::Result {
 
 struct PomodoroApp {
     timer: Timer,
+    background: egui::Color32,
 }
 
 impl eframe::App for PomodoroApp {
@@ -29,50 +31,60 @@ impl eframe::App for PomodoroApp {
         let now = Instant::now();
         self.timer.update(now);
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.heading("Pomodoro");
+        let background_frame = egui::Frame::central_panel(ui.style()).fill(self.background);
 
-            match self.timer.status() {
-                Status::Idle => {
-                    if ui.button("Start").clicked() {
-                        self.timer.start(now);
+        egui::CentralPanel::default()
+            .frame(background_frame)
+            .show(ui, |ui| {
+                ui.heading("Pomodoro");
+
+                ui.horizontal(|ui| {
+                    ui.label("Background");
+                    ui.color_edit_button_srgba(&mut self.background);
+                });
+
+                match self.timer.status() {
+                    Status::Idle => {
+                        if ui.button("Start").clicked() {
+                            self.timer.start(now);
+                        }
+                    }
+                    Status::Running => {
+                        if ui.button("Pause").clicked() {
+                            self.timer.pause(now);
+                        }
+                    }
+                    Status::Paused => {
+                        if ui.button("Resume").clicked() {
+                            self.timer.resume(now);
+                        }
                     }
                 }
-                Status::Running => {
-                    if ui.button("Pause").clicked() {
-                        self.timer.pause(now);
-                    }
+
+                if ui.button("Skip").clicked() {
+                    self.timer.skip();
                 }
-                Status::Paused => {
-                    if ui.button("Resume").clicked() {
-                        self.timer.resume(now);
-                    }
-                }
-            }
 
-            if ui.button("Skip").clicked() {
-                self.timer.skip();
-            }
+                let phase = match self.timer.phase() {
+                    Phase::Focus => "Focus",
+                    Phase::ShortBreak => "Short break",
+                    Phase::LongBreak => "Long break",
+                };
+                ui.label(phase);
 
-            let phase = match self.timer.phase() {
-                Phase::Focus => "Focus",
-                Phase::ShortBreak => "Short break",
-                Phase::LongBreak => "Long break",
-            };
-            ui.label(phase);
+                let remaining = self.timer.remaining(now);
+                let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0);
 
-            let remaining = self.timer.remaining(now);
-            let seconds = remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0);
+                ui.label(
+                    egui::RichText::new(format!("{:02}:{:02}", seconds / 60, seconds % 60,))
+                        .size(48.0),
+                );
 
-            ui.label(
-                egui::RichText::new(format!("{:02}:{:02}", seconds / 60, seconds % 60,)).size(48.0),
-            );
-
-            ui.label(format!(
-                "Completed focus sessions: {}",
-                self.timer.completed_focus_sessions(),
-            ));
-        });
+                ui.label(format!(
+                    "Completed focus sessions: {}",
+                    self.timer.completed_focus_sessions(),
+                ));
+            });
 
         if self.timer.status() == Status::Running {
             let remaining = self.timer.remaining(Instant::now());
